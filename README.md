@@ -79,4 +79,3 @@ The test split will be kept separate from model training and tuning.
 This project focuses on **word-level next-word prediction using an LSTM**. It is not a transformer-based language model or a code-completion system.
 
 The model's probabilities are estimates produced by the trained model, not guarantees that a candidate is the correct next word.
-
