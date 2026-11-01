@@ -66,9 +66,9 @@ The test split will be kept separate from model training and tuning.
 ## Project Status
 
 - [x] Downloaded and inspected dataset files
-- [ ] Finalize preprocessing decisions
-- [ ] Implement word-level tokenization
-- [ ] Generate training sequences
+- [x] Finalize preprocessing decisions
+- [x] Implement word-level tokenization
+- [x] Generate training sequences
 - [ ] Build and train the LSTM
 - [ ] Evaluate the model
 - [ ] Implement top-five predictions
