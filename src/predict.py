@@ -5,6 +5,8 @@ from pathlib import Path
 import numpy as np
 import tensorflow as tf
 
+import string
+
 
 # Project paths
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +31,11 @@ def load_prediction_resources():
     }
 
     return model, token_to_id, id_to_token
+
+
+def is_displayable_word(token):
+    """Exclude punctuation-only tokens from suggestions."""
+    return any(character.isalnum() for character in token)
 
 
 def predict_next_words(text, model, token_to_id, id_to_token, top_k=5):
@@ -74,9 +81,24 @@ def predict_next_words(text, model, token_to_id, id_to_token, top_k=5):
     probabilities = tf.nn.softmax(logits)
 
     # Get the highest-probability words.
-    top_probabilities, top_ids = tf.math.top_k(
-        probabilities,
+    
+    # Filter punctuation-only tokens.
+    valid_ids = [
+        token_id
+        for token_id, token in id_to_token.items()
+        if is_displayable_word(token)
+    ]
+
+    valid_logits = tf.gather(probabilities, valid_ids)
+
+    top_probabilities, top_positions = tf.math.top_k(
+        valid_logits,
         k=top_k,
+    )
+
+    top_ids = tf.gather(
+        tf.constant(valid_ids, dtype=tf.int32),
+        top_positions,
     )
 
     results = []
