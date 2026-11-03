@@ -2,16 +2,16 @@
 import json
 from pathlib import Path
 
-import numpy as np
 import tensorflow as tf
-
-import string
 
 
 # Project paths
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = PROJECT_ROOT / "artifacts" / "next_word_lstm.keras"
 VOCAB_PATH = PROJECT_ROOT / "artifacts" / "vocabulary.json"
+
+PAD_TOKEN = "<pad>"
+UNK_TOKEN = "<unk>"
 
 
 def load_prediction_resources():
@@ -34,17 +34,20 @@ def load_prediction_resources():
 
 
 def is_displayable_word(token):
-    """Exclude punctuation-only tokens from suggestions."""
+    """Check whether a token contains at least one alphanumeric character."""
     return any(character.isalnum() for character in token)
 
 
-def predict_next_words(text, model, token_to_id, id_to_token, top_k=5):
-    """Predict the top-k most likely next words."""
+def predict_next_words(
+    text,
+    model,
+    token_to_id,
+    id_to_token,
+    top_k=5,
+):
+    """Predict unique next-word suggestions."""
 
     tokens = text.split()
-
-    if len(tokens) == 0:
-        raise ValueError("Please enter some text.")
 
     context_window = model.input_shape[1]
 
@@ -53,85 +56,126 @@ def predict_next_words(text, model, token_to_id, id_to_token, top_k=5):
             f"Please enter at least {context_window} words."
         )
 
-    # Use only the most recent context words.
     tokens = tokens[-context_window:]
 
-    # Convert words into IDs. Unknown words become <unk>.
+    # Convert input words into IDs.
+    unknown_id = token_to_id[UNK_TOKEN]
+
     input_ids = [
-        token_to_id.get(token, token_to_id["<unk>"])
+        token_to_id.get(
+            token,
+            token_to_id.get(token.casefold(), unknown_id),
+        )
         for token in tokens
     ]
 
-    input_tensor = tf.constant(
-        [input_ids],
-        dtype=tf.int32,
-    )
+    input_tensor = tf.constant([input_ids], dtype=tf.int32)
 
-    # Get model logits.
+    # Obtain model probabilities.
     logits = model(input_tensor, training=False)[0]
+    probabilities = tf.nn.softmax(logits).numpy()
 
-    # Do not suggest special tokens.
-    logits = tf.tensor_scatter_nd_update(
-        logits,
-        indices=[[token_to_id["<pad>"]], [token_to_id["<unk>"]]],
-        updates=[-1e9, -1e9],
-    )
+    # Group case variants and exclude punctuation/special tokens.
+    grouped = {}
 
-    # Convert logits into probabilities.
-    probabilities = tf.nn.softmax(logits)
+    for token_id, token in id_to_token.items():
 
-    # Get the highest-probability words.
-    
-    # Filter punctuation-only tokens.
-    valid_ids = [
-        token_id
-        for token_id, token in id_to_token.items()
-        if is_displayable_word(token)
-    ]
+        if token in (PAD_TOKEN, UNK_TOKEN):
+            continue
 
-    valid_logits = tf.gather(probabilities, valid_ids)
+        if not is_displayable_word(token):
+            continue
 
-    top_probabilities, top_positions = tf.math.top_k(
-        valid_logits,
-        k=top_k,
-    )
+        probability = float(probabilities[token_id])
+        key = token.casefold()
 
-    top_ids = tf.gather(
-        tf.constant(valid_ids, dtype=tf.int32),
-        top_positions,
+        if key not in grouped:
+            grouped[key] = {
+                "word": token,
+                "probability": probability,
+            }
+        else:
+            grouped[key]["probability"] += probability
+
+            # Display the spelling with the highest individual probability.
+            if probability > grouped[key].get("best_individual", 0):
+                grouped[key]["word"] = token
+
+        grouped[key]["best_individual"] = max(
+            probability,
+            grouped[key].get("best_individual", 0),
+        )
+
+    if not grouped:
+        return []
+
+    # Normalize across all eligible word groups.
+    total_probability = sum(
+        item["probability"] for item in grouped.values()
     )
 
     results = []
 
-    for probability, token_id in zip(
-        top_probabilities.numpy(),
-        top_ids.numpy(),
-    ):
+    for item in grouped.values():
         results.append({
-            "word": id_to_token[int(token_id)],
-            "probability": float(probability),
+            "word": item["word"],
+            "probability": item["probability"] / total_probability,
         })
 
-    return results
+    results.sort(
+        key=lambda item: item["probability"],
+        reverse=True,
+    )
+
+    return results[:top_k]
+
+
+def main():
+    print("=" * 45)
+    print("       TECH AUTOCOMPLETE - LSTM")
+    print("=" * 45)
+
+    print("\nLoading model and vocabulary...")
+
+    model, token_to_id, id_to_token = load_prediction_resources()
+
+    print("Model loaded successfully.")
+    print("\nEnter at least 5 words to predict.")
+    print("Type 'exit' to quit.")
+
+    while True:
+
+        text = input("\nEnter sentence: ").strip()
+
+        if text.casefold() == "exit":
+            print("Exiting prediction system.")
+            break
+
+        if not text:
+            print("Please enter some text.")
+            continue
+
+        try:
+            predictions = predict_next_words(
+                text,
+                model,
+                token_to_id,
+                id_to_token,
+                top_k=5,
+            )
+
+            print("\nTop next-word suggestions:")
+
+            for index, prediction in enumerate(predictions, start=1):
+                print(
+                    f"{index}. {prediction['word']:<20}"
+                    f"{prediction['probability'] * 100:.2f}%"
+                )
+
+        except ValueError as error:
+            print(f"Input error: {error}")
 
 
 if __name__ == "__main__":
-    model, token_to_id, id_to_token = load_prediction_resources()
-
-    text = input("Enter at least 5 words: ")
-
-    predictions = predict_next_words(
-        text,
-        model,
-        token_to_id,
-        id_to_token,
-        top_k=5,
-    )
-
-    print("\nTop 5 next-word suggestions:")
-
-    for index, prediction in enumerate(predictions, start=1):
-        print(
-            f"{index}. {prediction['word']} "
-            f"- {prediction['probability'] * 100:.2f}%"
-        )
+    main()
+    
