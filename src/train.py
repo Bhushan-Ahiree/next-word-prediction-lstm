@@ -1,4 +1,7 @@
 
+import json
+from pathlib import Path
+
 import tensorflow as tf
 
 from src.preprocessing.text_preprocessing import (
@@ -86,6 +89,28 @@ def main():
 
     for metric, value in history.history.items():
         print(f"{metric}: {value[-1]:.4f}")
+        
+    # Create model directory.
+    MODEL_DIR = Path("artifacts")
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Save trained model.
+    model.save(MODEL_DIR / "next_word_lstm.keras")
+
+    # Save vocabulary.
+    with open(
+        MODEL_DIR / "vocabulary.json",
+        "w",
+        encoding="utf-8",
+    ) as file:
+        json.dump(
+            token_to_id,
+            file,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    print("\nModel and vocabulary saved successfully.")
 
 
 if __name__ == "__main__":
