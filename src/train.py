@@ -22,7 +22,7 @@ LSTM_UNITS = 128
 # Start with a small experiment.
 TRAIN_EXAMPLES = 50_000
 VALIDATION_EXAMPLES = 10_000
-EPOCHS = 1
+EPOCHS = 5
 
 
 def main():
@@ -76,8 +76,14 @@ def main():
 
     print("Starting training...")
 
+    early_stopping = tf.keras.callbacks.EarlyStopping(
+    monitor="val_loss",
+    patience=2,
+    restore_best_weights=True,
+)
     history = model.fit(
         train_dataset,
+        callbacks=[early_stopping],
         validation_data=validation_dataset,
         epochs=EPOCHS,
         steps_per_epoch=(TRAIN_EXAMPLES + BATCH_SIZE - 1) // BATCH_SIZE,
